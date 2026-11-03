@@ -1,0 +1,27 @@
+==================================================
+MOTHERS HUT RESTAURANT - SUPPLIER PROCUREMENT GUIDELINES
+==================================================
+
+1. APPROVED VENDOR DIRECTORY & SCHEDULES
+
+Supplier 1: ABC Foods Ltd
+- Primary Category: Fresh Poultry, Meat & Eggs
+- Delivery Schedule: Daily at 07:00 AM.
+- Minimum Order Value: INR 3,000.
+- Quality Check: Poultry must be delivered chilled (below 4°C). Temperature probe reading must be signed on the delivery challan. Any delivery above 5°C must be rejected immediately.
+
+Supplier 2: Golden Grain Traders
+- Primary Category: Basmati Rice, Grains, Cooking Oil, Flour & Spices
+- Delivery Schedule: Tuesdays and Fridays between 02:00 PM and 05:00 PM.
+- Minimum Order Value: INR 5,000.
+- Packaging Standard: All rice bags must be sealed with moisture-proof food grade lining. Inspect for torn sacks or pest presence before signing invoices.
+
+Supplier 3: Fresh Farm Produce
+- Primary Category: Fresh Vegetables (Onions, Tomatoes, Potatoes, Herbs, Ginger, Garlic)
+- Delivery Schedule: Mondays, Wednesdays, and Saturdays at 06:30 AM.
+- Acceptance Standards: Firmness inspection on tomatoes; discard rate must not exceed 2% per crate.
+
+2. PAYMENT TERMS & PURCHASE REQUEST APPROVAL LIMITS
+- All draft purchase requests above INR 1,000 or exceeding 15 kg must be authorized by the Kitchen Head or General Manager.
+- Emergency off-cycle orders incur a 10% delivery surcharge and must be flagged as urgent in the system.
+

@@ -1,0 +1,23 @@
+# Secrets and private configuration
+.env
+.env.*
+!.env.example
+
+# Python cache & virtual environment
+__pycache__/
+*.py[cod]
+.pytest_cache/
+mate/
+venv/
+.venv/
+
+# Local data & databases
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs and temporary files
+*.log
+tmp/
+uploads/

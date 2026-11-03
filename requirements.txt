@@ -1,0 +1,9 @@
+streamlit
+groq
+pypdf
+python-docx
+fastembed
+chromadb
+python-dotenv
+pytest
+
