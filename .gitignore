@@ -11,6 +11,10 @@ mate/
 venv/
 .venv/
 
+# Node & Frontend build artifacts
+node_modules/
+frontend/dist/
+
 # Local data & databases
 data/
 *.db
