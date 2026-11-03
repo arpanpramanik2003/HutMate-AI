@@ -1,3 +1,6 @@
+fastapi
+uvicorn
+python-multipart
 streamlit
 groq
 pypdf
@@ -6,4 +9,3 @@ fastembed
 chromadb
 python-dotenv
 pytest
-
