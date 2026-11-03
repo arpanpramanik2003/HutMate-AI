@@ -147,16 +147,30 @@ Guards operational writes and financial commitments:
 
 ---
 
+## 🌐 Multilingual & Magic In-Chat Language Adaptation
+
+HutMate AI features a fully autonomous language engine:
+1. **Dynamic Language Detection**: Write in **English**, **Bengali (বাংলা)**, or **Hindi (हिंदी)** — the agent automatically detects your language and responds fluently in that language without requiring you to touch the sidebar.
+2. **In-Chat Language Switching**: Change languages right inside the conversation! Tell the bot:
+   - *"Speak in Bengali"* or *"বাংলায় কথা বলুন"* $\rightarrow$ switches context and replies in Bengali.
+   - *"Now switch to English"* or *"Talk in English"* $\rightarrow$ switches context and replies in English.
+   - *"Hindi me baat karo"* or *"हिंदी में उत्तर दें"* $\rightarrow$ switches context and replies in Hindi.
+3. **Banglish & Hinglish Tolerance**: Prompts like `"amader kache ki alu ache?"` or `"5 packet alu add koro"` are natively understood, mapped to canonical database fields, and replied to in Bengali.
+4. **Smart Typo Tolerance (Levenshtein Distance)**: Typos such as `"potto"`, `"cheez"`, `"chikn"`, or `"tamatar"` automatically resolve to canonical inventory items.
+
+---
+
 ## 🧪 Demo Scenarios to Try
 
 | Question / Action | What the System Does | Expected Outcome |
 | :--- | :--- | :--- |
 | *"What is our food storage policy?"* | Searches ChromaDB via `search_knowledge_base` | Returns food hygiene guidelines with document & page citation. |
-| *"How much chicken breast is currently in stock?"* | Calls `get_inventory(item_name='chicken')` | Returns live stock (e.g. `14.5 kg`) directly from SQLite. |
+| *"আমাদের কাছে কি আলু আছে?"* | Detects Bengali, normalizes to `Potatoes`, checks stock | Responds fluently in Bengali with current stock levels. |
+| *"৫ প্যাকেট চিজ যোগ করুন"* | Detects Bengali, infers category `Dairy`, invokes `add_inventory_item` | Confirms addition in Bengali; stock increments in SQLite. |
 | *"Do you have cheese?"* | Calls `get_inventory(item_name='cheese')` | Reports that no cheese is currently found in stock. |
 | *"Then add this in the inventory for 5 packets and add sufficient category also"* | Resolves context ("this" = Cheese), infers category (`Dairy`), calls `add_inventory_item` | Confirms addition of 5.0 packets of Cheese under Dairy, visible immediately in Tab 2! |
+| *"Now speak in Bengali from now on"* | Explicit language switch | Agent confirms and adopts Bengali for future conversation. |
 | *"What is the status of order ORD-1001?"* | Calls `get_order_status(order_number='ORD-1001')` | Returns status (`DELIVERED`), quantity (`100.0 kg Basmati Rice`), and supplier. |
-| *"Give me contact details for our poultry supplier."* | Calls `get_supplier_details(supplier_name='Poultry')` | Returns supplier name (`ABC Foods Ltd`), contact person, phone, and email. |
 | *"Prepare a purchase request for 25 kg of Basmati Rice from Golden Grain Traders."* | Calls `create_purchase_request(...)` | Confirms draft creation and surfaces request in the **Action Approvals** tab. |
 
 ---
@@ -200,6 +214,7 @@ HutMate AI/
 │   └── suppliers/
 │
 └── tests/
+    ├── test_i18n.py        # Automated tests for multilingual detection, Banglish/Hinglish, and typo correction
     ├── test_rag.py         # Automated tests for document parsing, chunking, and vector search
     └── test_tools.py       # Automated tests for inventory, orders, and approval lifecycles
 ```
@@ -215,6 +230,9 @@ python -m pytest tests/ -v
 ```
 
 **Test Coverage:**
+- `test_detect_language_script` & `test_detect_explicit_commands`: Validates native Bengali/Devanagari script detection and in-chat language switching.
+- `test_detect_banglish_and_hinglish`: Validates phonetic Banglish & Hinglish conversational matching.
+- `test_fuzzy_and_typos`: Validates Levenshtein distance error tolerance for ingredients.
 - `test_document_extraction_and_chunking`: Validates text extraction and sliding window metadata preservation.
 - `test_rag_indexing_and_retrieval`: Validates FastEmbed embeddings and ChromaDB semantic cosine similarity search.
 - `test_inventory_lookup`: Validates live SQLite inventory matching.

@@ -420,3 +420,168 @@ def get_unit_localized(unit: str, lang: str = "en") -> str:
     if lang in ("bn", "hi"):
         return unit_data.get(lang, unit)
     return unit
+
+
+# -------------------------------------------------------------
+# Dynamic Language Detection & In-Chat Language Switching Engine
+# -------------------------------------------------------------
+
+# Banglish keywords (Latin script transliterated Bengali)
+BANGLISH_KEYWORDS = {
+    "amader", "amake", "apnar", "apnader", "kache", "ache", "achhe",
+    "koro", "korun", "kore", "bolo", "bolun", "bolen", "dekhaw", "dekhao",
+    "dekhun", "dorkar", "lagbe", "khabar", "tahole", "rekhecho", "bhalo",
+    "khali", "ekhon", "notun", "mach", "dim", "roshun", "peyaj", "chawa",
+    "shob", "koto", "ki", "kintu", "kothay", "jog", "dao", "din", "bhasha",
+    "banglay", "banglate"
+}
+
+# Hinglish keywords (Latin script transliterated Hindi)
+HINGLISH_KEYWORDS = {
+    "hume", "hamare", "apka", "paas", "hai", "hain", "kya", "chahiye",
+    "batao", "bataiye", "karo", "kijiye", "kitna", "dalo", "rakha",
+    "nahi", "kaha", "kab", "kripya", "daal", "sabji", "jodo", "bhasha"
+}
+
+# Regex patterns for explicit language commands
+RE_EXPLICIT_BENGALI = re.compile(
+    r"(?:(?:speak|talk|reply|respond|answer|chat|switch|change|use|write)\s*(?:in|to)?\s*(?:bengali|bangla))|"
+    r"(?:(?:বাংলায়|বাংলা\s*ভাষায়)\s*(?:বলুন|বলো|কথা|উত্তর|লিখুন))|"
+    r"(?:bangla(?:y|te)?\s*(?:bolo|bolun|kotha|likhun|likho))|"
+    r"\b(?:bengali|bangla)\s*(?:please|plz)\b",
+    re.IGNORECASE
+)
+
+RE_EXPLICIT_HINDI = re.compile(
+    r"(?:(?:speak|talk|reply|respond|answer|chat|switch|change|use|write)\s*(?:in|to)?\s*hindi)|"
+    r"(?:(?:हिंदी|हिन्दी)\s*(?:में|मे|भाषा\s*में)?\s*(?:बोलो|बात|बताओ|उत्तर|लिखो))|"
+    r"(?:hindi\s*me\s*(?:bolo|baat|batao|likho))|"
+    r"\bhindi\s*(?:please|plz)\b",
+    re.IGNORECASE
+)
+
+RE_EXPLICIT_ENGLISH = re.compile(
+    r"(?:(?:speak|talk|reply|respond|answer|chat|switch|change|use|write)\s*(?:in|to)?\s*english)|"
+    r"(?:(?:ইংরেজিতে|ইংরেজি\s*ভাষায়)\s*(?:বলুন|বলো|কথা|উত্তর|লিখুন))|"
+    r"(?:(?:अंग्रेजी|अंग्रेज़ी)\s*(?:में|मे)?\s*(?:बोलो|बात|बताओ|लिखो))|"
+    r"(?:ingreji(?:te)?\s*(?:bolo|bolun))|"
+    r"\benglish\s*(?:please|plz)\b",
+    re.IGNORECASE
+)
+
+
+def detect_message_language(text: str, default_lang: str = "en") -> Dict[str, Any]:
+    """
+    Intelligently detect the language or explicit language switch request in user input.
+    
+    Detection priority:
+    1. Explicit language switch command (e.g. 'speak in bengali', 'বাংলায় কথা বলুন', 'talk in english').
+    2. Native Script detection (Bengali Unicode range U+0980..U+09FF vs Devanagari U+0900..U+097F).
+    3. Transliterated / Phonetic detection (Banglish vs Hinglish keywords).
+    4. Default / Session language fallback.
+
+    Returns:
+        {
+            "language": "en" | "bn" | "hi",
+            "is_explicit_switch": bool,
+            "detected_script": Optional[str],
+            "reason": str
+        }
+    """
+    if not text or not text.strip():
+        return {
+            "language": default_lang,
+            "is_explicit_switch": False,
+            "detected_script": None,
+            "reason": "empty_input"
+        }
+
+    raw = text.strip()
+    clean_lower = re.sub(r"[^\w\s]", " ", raw.lower())
+    tokens = set(clean_lower.split())
+
+    # 1. Check for Explicit Language Switch Commands
+    if RE_EXPLICIT_BENGALI.search(raw):
+        return {
+            "language": "bn",
+            "is_explicit_switch": True,
+            "detected_script": "command",
+            "reason": "explicit_bengali_request"
+        }
+
+    if RE_EXPLICIT_HINDI.search(raw):
+        return {
+            "language": "hi",
+            "is_explicit_switch": True,
+            "detected_script": "command",
+            "reason": "explicit_hindi_request"
+        }
+
+    if RE_EXPLICIT_ENGLISH.search(raw):
+        return {
+            "language": "en",
+            "is_explicit_switch": True,
+            "detected_script": "command",
+            "reason": "explicit_english_request"
+        }
+
+    # 2. Check for Native Script Characters
+    bengali_chars = len(re.findall(r"[\u0980-\u09FF]", raw))
+    devanagari_chars = len(re.findall(r"[\u0900-\u097F]", raw))
+
+    if bengali_chars > 0 and bengali_chars >= devanagari_chars:
+        return {
+            "language": "bn",
+            "is_explicit_switch": False,
+            "detected_script": "bengali",
+            "reason": f"bengali_script_detected ({bengali_chars} chars)"
+        }
+
+    if devanagari_chars > 0 and devanagari_chars > bengali_chars:
+        return {
+            "language": "hi",
+            "is_explicit_switch": False,
+            "detected_script": "devanagari",
+            "reason": f"devanagari_script_detected ({devanagari_chars} chars)"
+        }
+
+    # 3. Check for Banglish or Hinglish Transliteration Keywords
+    banglish_matches = tokens.intersection(BANGLISH_KEYWORDS)
+    hinglish_matches = tokens.intersection(HINGLISH_KEYWORDS)
+
+    if len(banglish_matches) >= 2 or (len(banglish_matches) >= 1 and any(t in tokens for t in ["alu", "murgi", "mach", "dim", "peyaj", "roshun", "paneer", "doodh"])):
+        return {
+            "language": "bn",
+            "is_explicit_switch": False,
+            "detected_script": "banglish",
+            "reason": f"banglish_keywords_detected ({', '.join(banglish_matches)})"
+        }
+
+    if len(hinglish_matches) >= 2 or (len(hinglish_matches) >= 1 and any(t in tokens for t in ["aloo", "paneer", "pyaz", "tamatar", "doodh"])):
+        return {
+            "language": "hi",
+            "is_explicit_switch": False,
+            "detected_script": "hinglish",
+            "reason": f"hinglish_keywords_detected ({', '.join(hinglish_matches)})"
+        }
+
+    # 4. Standard Latin text / English
+    # If the user previously had a non-English language active, but now wrote clear English words
+    # check if user message is predominantly standard English
+    english_food_terms = {"cheese", "potato", "potatoes", "chicken", "order", "inventory", "stock", "add", "delete", "create", "list", "show", "what", "is", "do", "we", "have", "supplier"}
+    if len(tokens.intersection(english_food_terms)) >= 2:
+        return {
+            "language": "en",
+            "is_explicit_switch": False,
+            "detected_script": "english",
+            "reason": "english_keywords_detected"
+        }
+
+    return {
+        "language": default_lang,
+        "is_explicit_switch": False,
+        "detected_script": None,
+        "reason": "default_fallback"
+    }
+
+
