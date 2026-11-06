@@ -1,7 +1,7 @@
-# 🍽️ HutMate AI — Restaurant Operations Assistant
+# 🍽️ HutMate AI — Restaurant Operations Assistant (v2.0)
 
 > **Your Intelligent Restaurant Operations Partner**  
-> An AI-powered operational copilot for restaurant owners, managers, and kitchen staff built with **Streamlit**, **Groq (GPT-OSS-120B)**, **FastEmbed**, **ChromaDB**, and **SQLite**.
+> An AI-powered operational copilot for restaurant owners, managers, and kitchen staff built with **React 18**, **FastAPI**, **Groq (GPT-OSS-120B)**, **FastEmbed**, **ChromaDB**, and **SQLite**.
 
 ---
 
@@ -17,8 +17,11 @@ HutMate AI consolidates restaurant operational knowledge and live database recor
                      USER
                        │
                        ▼
-              STREAMLIT INTERFACE
+          REACT 18 SINGLE PAGE APP
        (Chat, Live Tables, Approvals)
+                       │  REST API (JSON)
+                       ▼
+               FASTAPI BACKEND
                        │
                        ▼
             AGENT ORCHESTRATOR LOOP
@@ -39,36 +42,35 @@ HutMate AI consolidates restaurant operational knowledge and live database recor
 ## 🚀 Quick Start Guide
 
 ### 1. Prerequisites
-- **Python:** 3.11 or 3.12 (already installed in the included `mate` virtual environment)
+- **Python:** 3.11 or 3.12 (in the included `mate` virtual environment)
+- **Node.js:** v18+ (tested with v22+)
 - **Groq API Key:** A free API key from [Groq Console](https://console.groq.com/keys)
 
 ---
 
-### 2. Environment Activation & Setup
+### 2. Environment Activation & Dependencies
 
-Open your terminal or PowerShell in the project root:
+Open PowerShell in the project root:
 
 ```powershell
-# 1. Activate the included virtual environment
+# 1. Activate the Python virtual environment
 .\mate\Scripts\Activate.ps1
 
-# (Optional verification)
-python -V
-pip list
+# 2. Build the React frontend production assets
+npm run build
 ```
 
 ---
 
 ### 3. Configure Your Environment Variables
 
-Create your local `.env` file from the provided `.env.example`:
+Create your local `.env` file from `.env.example`:
 
 ```powershell
-# Copy the example configuration
 Copy-Item .env.example .env
 ```
 
-Open `.env` in any editor and insert your Groq API key:
+Set your Groq API key in `.env`:
 
 ```env
 APP_NAME=HutMate AI
@@ -82,40 +84,32 @@ SQLITE_DB_PATH=./data/restaurant.db
 
 ---
 
-### 4. Seed the Sample Database
+### 4. Launch the Application
 
-Populate initial demonstration inventory, orders, and supplier directory records:
-
-```powershell
-python -m database.sample_data
-```
-
-*Output:*
-```text
-Database schema initialized successfully.
-Demo data seeded successfully.
-```
-
----
-
-### 5. Launch the Application
-
-Start the Streamlit application:
+Start the unified FastAPI server (serves the React UI + REST API):
 
 ```powershell
-streamlit run app.py
+python app.py
 ```
 
-Streamlit will automatically open your browser at **`http://localhost:8501`**.
+Or run via Uvicorn:
+
+```powershell
+python -m uvicorn server:app --port 8000 --reload
+```
+
+Open your browser at **`http://localhost:8000`**.
+
+*(For frontend development with hot-reload, run `npm run dev` and visit `http://localhost:5173`)*.
 
 ---
 
 ## 🖥️ How to Use the Interface
 
 ### 💬 Tab 1: Operations Chat
-- Ask natural language questions about your restaurant.
+- Ask natural language questions about recipes, hygiene policies, ingredients, and stock.
 - The agent automatically determines whether to search uploaded knowledge documents, query live database tables, modify stock levels, or draft a purchase order.
-- **Conversational Inventory Management:** You can instruct the assistant to add or update items in chat! For example, say: *"Add 5 packets of cheese to inventory and add sufficient category"* or follow up on a lookup:
+- **Conversational Inventory Management:** You can instruct the assistant to add or update items in chat! For example:
   - *User:* "Do you have cheese?" $\rightarrow$ *AI:* "No cheese found in current inventory."
   - *User:* "Then add this in the inventory for 5 packets and add sufficient category also" $\rightarrow$ *AI resolves "this" as Cheese, auto-categorizes as "Dairy", and invokes `add_inventory_item`!*
 - Source citations (document title and page number) are automatically displayed when knowledge base documents are referenced.
@@ -123,7 +117,7 @@ Streamlit will automatically open your browser at **`http://localhost:8501`**.
 
 ### 📊 Tab 2: Live Restaurant Data Management
 You can view, modify, add, and delete operational data in real time:
-- **📦 Inventory Items:** Edit quantities, units, and categories inline directly in the interactive spreadsheet (`st.data_editor`), or use the **➕ Quick Add** form. Click **💾 Save Inventory Changes** to write changes to SQLite.
+- **📦 Inventory Items:** Edit quantities, units, and categories inline directly in the interactive spreadsheet, or use the **➕ Quick Add** form. Click **💾 Save Inventory Changes** to write changes to SQLite.
 - **🚚 Suppliers:** Update contacts, phones, emails, and supplied categories inline, or add new suppliers. Click **💾 Save Supplier Changes** to persist.
 - **📋 Orders:** Change order statuses (`PROCESSING`, `IN_TRANSIT`, `DELIVERED`, `CANCELLED`) or record new purchase orders with the **➕ Create New Order Record** form. Click **💾 Save Orders Changes** to persist.
 - **Live Assistant Awareness:** Any modifications saved here are immediately visible to HutMate AI in the chat!
@@ -136,8 +130,8 @@ Guards operational writes and financial commitments:
   1. The purchase request status changes to `APPROVED` with a resolution timestamp.
   2. The item's stock in **Inventory** is automatically incremented.
   3. A new formal order (e.g. `ORD-APR0001`) with status `PROCESSING` is automatically generated in the **Orders** table!
-- **📜 Approval History & Audit Trail:** Switch to this sub-tab to inspect all historical requests, who created them, their status, and when they were resolved.
-- **➕ Manual Drafting:** You can also draft purchase orders manually using the built-in draft form.
+- **📜 Approval History & Audit Trail:** Inspect all historical requests, status, and resolution timestamps.
+- **➕ Manual Drafting:** Draft purchase orders manually using the built-in draft form.
 
 ### 📄 Sidebar: Uploading & Indexing Documents
 1. Drag and drop any restaurant `.pdf`, `.docx`, or `.txt` file (e.g. food safety SOPs, recipes, supplier pricing).
@@ -150,8 +144,8 @@ Guards operational writes and financial commitments:
 ## 🌐 Multilingual & Magic In-Chat Language Adaptation
 
 HutMate AI features a fully autonomous language engine:
-1. **Dynamic Language Detection**: Write in **English**, **Bengali (বাংলা)**, or **Hindi (हिंदी)** — the agent automatically detects your language and responds fluently in that language without requiring you to touch the sidebar.
-2. **In-Chat Language Switching**: Change languages right inside the conversation! Tell the bot:
+1. **Dynamic Language Detection**: Write in **English**, **Bengali (বাংলা)**, or **Hindi (हिंदी)** — the agent automatically detects your language and responds fluently without requiring manual switching.
+2. **In-Chat Language Switching**: Change languages right inside the conversation:
    - *"Speak in Bengali"* or *"বাংলায় কথা বলুন"* $\rightarrow$ switches context and replies in Bengali.
    - *"Now switch to English"* or *"Talk in English"* $\rightarrow$ switches context and replies in English.
    - *"Hindi me baat karo"* or *"हिंदी में उत्तर दें"* $\rightarrow$ switches context and replies in Hindi.
@@ -160,63 +154,70 @@ HutMate AI features a fully autonomous language engine:
 
 ---
 
-## 🧪 Demo Scenarios to Try
-
-| Question / Action | What the System Does | Expected Outcome |
-| :--- | :--- | :--- |
-| *"What is our food storage policy?"* | Searches ChromaDB via `search_knowledge_base` | Returns food hygiene guidelines with document & page citation. |
-| *"আমাদের কাছে কি আলু আছে?"* | Detects Bengali, normalizes to `Potatoes`, checks stock | Responds fluently in Bengali with current stock levels. |
-| *"৫ প্যাকেট চিজ যোগ করুন"* | Detects Bengali, infers category `Dairy`, invokes `add_inventory_item` | Confirms addition in Bengali; stock increments in SQLite. |
-| *"Do you have cheese?"* | Calls `get_inventory(item_name='cheese')` | Reports that no cheese is currently found in stock. |
-| *"Then add this in the inventory for 5 packets and add sufficient category also"* | Resolves context ("this" = Cheese), infers category (`Dairy`), calls `add_inventory_item` | Confirms addition of 5.0 packets of Cheese under Dairy, visible immediately in Tab 2! |
-| *"Now speak in Bengali from now on"* | Explicit language switch | Agent confirms and adopts Bengali for future conversation. |
-| *"What is the status of order ORD-1001?"* | Calls `get_order_status(order_number='ORD-1001')` | Returns status (`DELIVERED`), quantity (`100.0 kg Basmati Rice`), and supplier. |
-| *"Prepare a purchase request for 25 kg of Basmati Rice from Golden Grain Traders."* | Calls `create_purchase_request(...)` | Confirms draft creation and surfaces request in the **Action Approvals** tab. |
-
----
-
 ## 🧩 Project Architecture & Directory Structure
 
 ```text
 HutMate AI/
-├── app.py                  # Streamlit application UI (Chat, Data, Approvals, File Uploader)
-├── requirements.txt        # Python dependency manifest
-├── .env                    # Local environment variables (Private)
-├── .env.example            # Template for environment configuration
-├── .gitignore              # Exclusion list for secrets, venv, and databases
-├── README.md               # User guide & documentation
+├── app.py                         # ASGI / FastAPI entrypoint runner
+├── main.py                        # Alternative ASGI entrypoint (uvicorn main:app)
+├── server.py                      # FastAPI REST API & static React server
+├── requirements.txt               # Python dependency manifest
+├── package.json                   # NPM workspaces definition
+├── .env                           # Local environment variables (Private)
+├── .env.example                   # Template for environment configuration
+├── .gitignore                     # Exclusion list for secrets, venv, and databases
+├── README.md                      # User guide & documentation
+│
+├── frontend/                      # React 18 + Vite frontend
+│   ├── package.json
+│   ├── vite.config.js
+│   ├── index.html
+│   ├── src/
+│   │   ├── main.jsx
+│   │   ├── App.jsx                # Main container & state coordination
+│   │   ├── index.css              # Application styling
+│   │   ├── constants/
+│   │   │   └── config.js          # Shared translations, units, and constants
+│   │   └── components/
+│   │       ├── common/            # Header, Sidebar, Toast components
+│   │       ├── chat/              # ChatTab, ChatMessage, PromptChips
+│   │       ├── data/              # DataTab, Inventory, Suppliers, Orders
+│   │       └── approvals/         # ApprovalsTab, PendingQueue, AuditHistory
+│   └── dist/                      # Compiled production assets
 │
 ├── core/
-│   ├── config.py           # Typed environment settings and directory setup
-│   └── groq_client.py      # Groq SDK client connection & completion wrapper
+│   ├── config.py                  # Typed environment settings and directory setup
+│   ├── groq_client.py             # Groq SDK client connection wrapper
+│   └── i18n.py                    # Multilingual detection, transliteration, typo lexicon
 │
 ├── database/
-│   ├── db.py               # SQLite schema setup and connection manager
-│   └── sample_data.py      # Demo seed script for inventory, orders, and suppliers
+│   ├── db.py                      # SQLite schema setup and connection manager
+│   └── sample_data.py             # Demo seed script for inventory, orders, suppliers
 │
 ├── rag/
-│   ├── document_loader.py  # Text parser for PDF (pypdf), DOCX (python-docx), and TXT
-│   ├── chunker.py          # Sliding-window chunker with metadata tracking
-│   ├── embeddings.py       # FastEmbed model wrapper (BAAI/bge-small-en-v1.5)
-│   └── retriever.py        # ChromaDB local collection search and indexing
+│   ├── document_loader.py         # Text parser for PDF (pypdf), DOCX (python-docx), TXT
+│   ├── chunker.py                 # Sliding-window chunker with metadata tracking
+│   ├── embeddings.py              # FastEmbed model wrapper (BAAI/bge-small-en-v1.5)
+│   └── retriever.py               # ChromaDB local collection search and indexing
 │
 ├── agent/
-│   ├── tools.py            # SQLite operational functions (lookup, add/update stock, orders, approvals)
-│   └── orchestrator.py     # Bounded Groq tool-calling agent with smart category inference
+│   ├── tools.py                   # SQLite operational functions (lookup, stock, orders, approvals)
+│   └── orchestrator.py            # Bounded Groq tool-calling agent with smart category inference
 │
-├── data/                   # Local storage directory (auto-created)
-│   ├── restaurant.db       # SQLite relational database
-│   └── chroma/             # Persistent ChromaDB vector database
+├── data/                          # Local storage directory (auto-created, git-ignored)
+│   ├── restaurant.db              # SQLite relational database
+│   └── chroma/                    # Persistent ChromaDB vector database
 │
-├── knowledge_base/         # Default folder for sample restaurant documents
+├── knowledge_base/                # Built-in sample restaurant documents
 │   ├── menus/
 │   ├── policies/
 │   └── suppliers/
 │
 └── tests/
-    ├── test_i18n.py        # Automated tests for multilingual detection, Banglish/Hinglish, and typo correction
-    ├── test_rag.py         # Automated tests for document parsing, chunking, and vector search
-    └── test_tools.py       # Automated tests for inventory, orders, and approval lifecycles
+    ├── test_api.py                # Automated tests for FastAPI REST routes
+    ├── test_i18n.py               # Automated tests for multilingual detection, Banglish/Hinglish
+    ├── test_rag.py                # Automated tests for document parsing, chunking, vector search
+    └── test_tools.py              # Automated tests for inventory, orders, approval lifecycles
 ```
 
 ---
@@ -229,51 +230,13 @@ Run the full automated test suite using `pytest`:
 python -m pytest tests/ -v
 ```
 
-**Test Coverage:**
-- `test_detect_language_script` & `test_detect_explicit_commands`: Validates native Bengali/Devanagari script detection and in-chat language switching.
-- `test_detect_banglish_and_hinglish`: Validates phonetic Banglish & Hinglish conversational matching.
-- `test_fuzzy_and_typos`: Validates Levenshtein distance error tolerance for ingredients.
-- `test_document_extraction_and_chunking`: Validates text extraction and sliding window metadata preservation.
-- `test_rag_indexing_and_retrieval`: Validates FastEmbed embeddings and ChromaDB semantic cosine similarity search.
-- `test_inventory_lookup`: Validates live SQLite inventory matching.
-- `test_order_lookup`: Validates order retrieval by order code.
-- `test_supplier_lookup`: Validates fuzzy supplier directory matching.
-- `test_purchase_request_lifecycle`: Validates draft creation, pending queue appearance, approval state transition, and automated inventory quantity incrementation.
-
----
-
-## ⚙️ Configuration Reference
-
-| Environment Variable | Default Value | Description |
-| :--- | :--- | :--- |
-| `APP_NAME` | `HutMate AI` | Display name of the application. |
-| `GROQ_API_KEY` | *(Required)* | Your Groq API key from console.groq.com. |
-| `GROQ_MODEL` | `openai/gpt-oss-120b` | Target language model hosted on Groq. |
-| `CHROMA_DB_DIR` | `./data/chroma` | Directory for local persistent ChromaDB storage. |
-| `SQLITE_DB_PATH` | `./data/restaurant.db`| File path for the operational SQLite database. |
-
----
-
-## ❓ Frequently Asked Questions & Troubleshooting
-
-#### 1. Why do I see a warning about `GROQ_API_KEY` missing?
-You need to add a valid Groq API key in your `.env` file:
-```env
-GROQ_API_KEY=gsk_your_key_here
-```
-Get a key for free from [Groq Console](https://console.groq.com/keys).
-
-#### 2. How do I reset the demo data?
-Click the **🔄 Reset / Seed Demo Data** button in the Streamlit sidebar, or run:
-```powershell
-python -m database.sample_data
-```
-
-#### 3. Where are the embeddings stored?
-Embeddings are computed locally using **FastEmbed** and stored in `./data/chroma`. No vector data leaves your local machine.
+**Test Coverage (20/20 Passing):**
+- `tests/test_api.py`: Validates `/api/bootstrap`, `/api/system/reseed`, inventory CRUD, supplier CRUD, order CRUD, approval lifecycles, RAG loading, and chat endpoint mocking.
+- `tests/test_i18n.py`: Validates native Bengali/Devanagari script detection, in-chat language switching, phonetic Banglish/Hinglish matching, and typo correction.
+- `tests/test_rag.py`: Validates text extraction, chunking, FastEmbed embeddings, and ChromaDB semantic search.
+- `tests/test_tools.py`: Validates operational tool execution and approval transitions in SQLite.
 
 ---
 
 ## 📄 License
 This project is licensed under the [MIT License](LICENSE).
-
