@@ -18,6 +18,9 @@ export default function App() {
   const [userRole, setUserRole] = useState('OWNER')
   const [roles, setRoles] = useState([])
 
+  // Mobile sidebar drawer state
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+
   // Live state from backend
   const [indexedChunks, setIndexedChunks] = useState(0)
   const [inventory, setInventory] = useState([])
@@ -612,6 +615,13 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      {/* Mobile Drawer Backdrop */}
+      <div
+        className={`sidebar-backdrop ${isSidebarOpen ? 'active' : ''}`}
+        onClick={() => setIsSidebarOpen(false)}
+        aria-hidden="true"
+      />
+
       {/* Sidebar Navigation & Controls */}
       <Sidebar
         lang={lang}
@@ -629,6 +639,8 @@ export default function App() {
         indexedChunks={indexedChunks}
         lowStockAlerts={lowStockAlerts}
         t={t}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
       />
 
       {/* Main Workspace Area */}
@@ -638,6 +650,7 @@ export default function App() {
           userRole={userRole}
           onRoleChange={setUserRole}
           roles={roles}
+          onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
         />
 
         <Toast toast={toast} onClose={() => setToast(null)} />
