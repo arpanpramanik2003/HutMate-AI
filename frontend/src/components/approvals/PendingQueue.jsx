@@ -9,6 +9,7 @@ export default function PendingQueue({
   onManualDraftSubmit,
   lang,
   t,
+  userRole = 'OWNER',
 }) {
   return (
     <>
@@ -55,20 +56,41 @@ export default function PendingQueue({
                 </div>
 
                 <div className="approval-actions">
-                  <button
-                    type="button"
-                    className="btn btn-success"
-                    onClick={() => onResolveRequest(req.id, 'APPROVED')}
-                  >
-                    {t('btn_approve')}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-danger"
-                    onClick={() => onResolveRequest(req.id, 'REJECTED')}
-                  >
-                    {t('btn_reject')}
-                  </button>
+                  {userRole !== 'OWNER' ? (
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        padding: '6px 12px',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        color: '#b45309',
+                        background: '#fef3c7',
+                        borderRadius: '6px',
+                        border: '1px solid #fde68a'
+                      }}
+                      title="Financial authorization is restricted to Owner/GM"
+                    >
+                      🔒 Owner Approval Required
+                    </span>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-success"
+                        onClick={() => onResolveRequest(req.id, 'APPROVED')}
+                      >
+                        {t('btn_approve')}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-danger"
+                        onClick={() => onResolveRequest(req.id, 'REJECTED')}
+                      >
+                        {t('btn_reject')}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             )

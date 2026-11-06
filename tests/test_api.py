@@ -215,3 +215,49 @@ def test_chat_endpoint_mocked():
         assert "state" in res
         assert "recipes" in res["state"]
         assert "low_stock_alerts" in res["state"]
+
+
+def test_rbac_role_enforcement():
+    from fastapi import HTTPException
+    seed_sample_data()
+
+    # 1. Test role checker dependency directly
+    owner_checker = server.require_role(["OWNER"])
+    assert owner_checker("OWNER") == "OWNER"
+    with pytest.raises(HTTPException) as exc_info:
+        owner_checker("LINE_COOK")
+    assert exc_info.value.status_code == 403
+    assert "Access forbidden" in exc_info.value.detail
+
+    # 2. Test Line Cook cannot resolve purchase approvals (403)
+    draft = server.draft_purchase_request(PurchaseRequestCreate(
+        item_name="Tomatoes",
+        quantity=5.0,
+        unit="kg",
+        supplier_name="Fresh Farm Produce"
+    ), user_role="LINE_COOK")
+    req_id = draft["request"]["id"]
+
+    # When resolve is attempted by Line Cook
+    resolve_checker = server.require_role(["OWNER"])
+    with pytest.raises(HTTPException) as exc_resolve:
+        resolve_checker("LINE_COOK")
+    assert exc_resolve.value.status_code == 403
+
+    # When resolve is performed by Owner
+    res = server.resolve_approval(req_id, PurchaseRequestResolve(decision="APPROVED"), user_role="OWNER")
+    assert res["status"] == "success"
+
+    # 3. Test Line Cook cannot reseed database (403)
+    reseed_checker = server.require_role(["OWNER"])
+    with pytest.raises(HTTPException) as exc_reseed:
+        reseed_checker("LINE_COOK")
+    assert exc_reseed.value.status_code == 403
+
+    # 4. Test Line Cook can record dish sales
+    sales_res = server.record_kitchen_dish_sales(
+        DishSalesRequest(dish_name="Garlic Butter Naan", portions=1.0),
+        user_role="LINE_COOK"
+    )
+    assert sales_res["result"]["status"] == "success"
+

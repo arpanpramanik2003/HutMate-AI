@@ -14,6 +14,10 @@ export default function App() {
   const [dataSubTab, setDataSubTab] = useState('inventory')
   const [approvalSubTab, setApprovalSubTab] = useState('pending')
 
+  // RBAC active role and available roles
+  const [userRole, setUserRole] = useState('OWNER')
+  const [roles, setRoles] = useState([])
+
   // Live state from backend
   const [indexedChunks, setIndexedChunks] = useState(0)
   const [inventory, setInventory] = useState([])
@@ -38,6 +42,28 @@ export default function App() {
   const t = (key, targetLang = lang) => {
     const dict = translations[key] || FALLBACK_TRANSLATIONS[key] || {}
     return dict[targetLang] || dict.en || key
+  }
+
+  // Unified API Fetch helper injecting X-User-Role and handling errors
+  const apiFetch = async (url, options = {}) => {
+    const headers = {
+      'X-User-Role': userRole,
+      ...(options.headers || {}),
+    }
+    if (
+      !(options.body instanceof FormData) &&
+      !headers['Content-Type'] &&
+      options.method &&
+      options.method !== 'GET'
+    ) {
+      headers['Content-Type'] = 'application/json'
+    }
+    const res = await fetch(url, { ...options, headers })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      throw new Error(data.detail || `Request failed with status ${res.status}`)
+    }
+    return data
   }
 
   // Chat state
@@ -94,6 +120,7 @@ export default function App() {
   const applyBackendState = (state) => {
     if (!state) return
     if (state.translations) setTranslations(state.translations)
+    if (Array.isArray(state.roles)) setRoles(state.roles)
     if (typeof state.indexed_chunks === 'number') setIndexedChunks(state.indexed_chunks)
     if (Array.isArray(state.inventory)) setInventory(state.inventory)
     if (Array.isArray(state.low_stock_alerts)) setLowStockAlerts(state.low_stock_alerts)
@@ -137,8 +164,7 @@ export default function App() {
   const handleReseed = async () => {
     setIsReseeding(true)
     try {
-      const res = await fetch('/api/system/reseed', { method: 'POST' })
-      const data = await res.json()
+      const data = await apiFetch('/api/system/reseed', { method: 'POST' })
       applyBackendState(data.state)
       showToast(
         lang === 'en'
@@ -157,8 +183,7 @@ export default function App() {
   const handleLoadSamples = async () => {
     setIsIndexingSamples(true)
     try {
-      const res = await fetch('/api/rag/load-samples', { method: 'POST' })
-      const data = await res.json()
+      const data = await apiFetch('/api/rag/load-samples', { method: 'POST' })
       setIndexedChunks(data.total_indexed_chunks)
       showToast(
         lang === 'en'
@@ -191,12 +216,10 @@ export default function App() {
     try {
       const formData = new FormData()
       selectedFiles.forEach((f) => formData.append('files', f))
-      const res = await fetch('/api/rag/upload', {
+      const data = await apiFetch('/api/rag/upload', {
         method: 'POST',
         body: formData,
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.detail || 'Upload failed')
       setIndexedChunks(data.total_indexed_chunks)
       setSelectedFiles([])
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -222,16 +245,14 @@ export default function App() {
     setIsChatLoading(true)
 
     try {
-      const res = await fetch('/api/chat', {
+      const data = await apiFetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: trimmed,
           history: messages.map((m) => ({ role: m.role, content: m.content })),
           language: lang,
         }),
       })
-      const data = await res.json()
       if (data.active_language && data.active_language !== lang) {
         setLang(data.active_language)
       }
@@ -267,12 +288,10 @@ export default function App() {
   // Kitchen Production / Dish Sales Handler
   const handleRecordDishSales = async (dishName, portions) => {
     try {
-      const res = await fetch('/api/kitchen/sales', {
+      const data = await apiFetch('/api/kitchen/sales', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dish_name: dishName, portions: parseFloat(portions) }),
       })
-      const data = await res.json()
       if (data.state) applyBackendState(data.state)
       if (data.result?.status === 'success') {
         showToast(`✅ Deducted ingredients for ${portions}x ${dishName}!`, 'success')
@@ -330,12 +349,10 @@ export default function App() {
           cost_per_unit: parseFloat(r.cost_per_unit) || 0.0,
           expiry_date: r.expiry_date || '',
         }))
-      const res = await fetch('/api/inventory/sync', {
+      const data = await apiFetch('/api/inventory/sync', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: validItems }),
       })
-      const data = await res.json()
       if (data.inventory) setInventory(data.inventory)
       if (data.low_stock_alerts) setLowStockAlerts(data.low_stock_alerts)
       showToast(
@@ -353,9 +370,8 @@ export default function App() {
     e.preventDefault()
     if (!newInv.item_name.trim()) return
     try {
-      const res = await fetch('/api/inventory', {
+      const data = await apiFetch('/api/inventory', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           item_name: newInv.item_name,
           quantity: parseFloat(newInv.quantity) || 0,
@@ -366,7 +382,6 @@ export default function App() {
           expiry_date: newInv.expiry_date || '',
         }),
       })
-      const data = await res.json()
       if (data.inventory) setInventory(data.inventory)
       if (data.low_stock_alerts) setLowStockAlerts(data.low_stock_alerts)
       setNewInv({
@@ -422,12 +437,10 @@ export default function App() {
           email: s.email || '',
           supplied_categories: s.supplied_categories || '',
         }))
-      const res = await fetch('/api/suppliers/sync', {
+      const data = await apiFetch('/api/suppliers/sync', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: validSuppliers }),
       })
-      const data = await res.json()
       if (data.suppliers) setSuppliers(data.suppliers)
       showToast(
         lang === 'en'
@@ -444,12 +457,10 @@ export default function App() {
     e.preventDefault()
     if (!newSup.name.trim()) return
     try {
-      const res = await fetch('/api/suppliers', {
+      const data = await apiFetch('/api/suppliers', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newSup),
       })
-      const data = await res.json()
       if (data.suppliers) setSuppliers(data.suppliers)
       showToast(`Added ${newSup.name} to suppliers!`, 'success')
       setNewSup({
@@ -501,12 +512,10 @@ export default function App() {
           supplier_name: o.supplier_name || '',
           status: o.status || 'PROCESSING',
         }))
-      const res = await fetch('/api/orders/sync', {
+      const data = await apiFetch('/api/orders/sync', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: validOrders }),
       })
-      const data = await res.json()
       if (data.orders) setOrders(data.orders)
       showToast(
         lang === 'en'
@@ -523,15 +532,13 @@ export default function App() {
     e.preventDefault()
     if (!newOrd.order_number.trim() || !newOrd.item_name.trim()) return
     try {
-      const res = await fetch('/api/orders', {
+      const data = await apiFetch('/api/orders', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...newOrd,
           quantity: parseFloat(newOrd.quantity) || 1.0,
         }),
       })
-      const data = await res.json()
       if (data.orders) setOrders(data.orders)
       showToast(`Recorded order ${newOrd.order_number}!`, 'success')
       setNewOrd({
@@ -550,12 +557,10 @@ export default function App() {
   // Action Approvals Handlers
   const handleResolveRequest = async (reqId, decision) => {
     try {
-      const res = await fetch(`/api/approvals/${reqId}/resolve`, {
+      const data = await apiFetch(`/api/approvals/${reqId}/resolve`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ decision }),
       })
-      const data = await res.json()
       if (data.state) applyBackendState(data.state)
       if (decision === 'APPROVED') {
         showToast(
@@ -581,15 +586,13 @@ export default function App() {
     e.preventDefault()
     if (!manualDraft.item_name.trim() || !manualDraft.supplier_name.trim()) return
     try {
-      const res = await fetch('/api/approvals', {
+      const data = await apiFetch('/api/approvals', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...manualDraft,
           quantity: parseFloat(manualDraft.quantity) || 1.0,
         }),
       })
-      const data = await res.json()
       if (data.pending_requests) setPendingRequests(data.pending_requests)
       if (data.all_requests) setAllRequests(data.all_requests)
       showToast(
@@ -630,7 +633,12 @@ export default function App() {
 
       {/* Main Workspace Area */}
       <main className="main-workspace">
-        <Header t={t} />
+        <Header
+          t={t}
+          userRole={userRole}
+          onRoleChange={setUserRole}
+          roles={roles}
+        />
 
         <Toast toast={toast} onClose={() => setToast(null)} />
 
@@ -736,6 +744,7 @@ export default function App() {
             onManualDraftSubmit={handleManualDraftSubmit}
             lang={lang}
             t={t}
+            userRole={userRole}
           />
         )}
       </main>

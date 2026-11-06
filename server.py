@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 import pandas as pd
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -32,13 +32,43 @@ app = FastAPI(
     version="2.0.0",
 )
 
+# CORS Configuration
+allowed_origins = config.CORS_ORIGINS if config.CORS_ORIGINS else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ----------------- Role-Based Access Control (RBAC) -----------------
+
+ROLES_METADATA = [
+    {"id": "OWNER", "label": "👑 Owner (Admin)", "description": "Full access to approvals, finance & settings"},
+    {"id": "HEAD_CHEF", "label": "🧑‍🍳 Head Chef", "description": "Kitchen & inventory manager, BOM controller"},
+    {"id": "LINE_COOK", "label": "🥘 Line Cook", "description": "Prep & food sales deduction only"},
+]
+
+def require_role(allowed_roles: List[str]):
+    """
+    Enforce role-based access permissions based on the 'X-User-Role' header.
+    Defaults to 'OWNER' for backwards compatibility if header is not supplied.
+    """
+    def role_checker(x_user_role: Optional[str] = Header(None, alias="X-User-Role")) -> str:
+        if not config.RBAC_ENABLED:
+            return "OWNER"
+        role = (x_user_role or "OWNER").strip().upper()
+        if role not in ("OWNER", "HEAD_CHEF", "LINE_COOK"):
+            role = "LINE_COOK"
+        if role not in allowed_roles:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access forbidden: Role '{role}' does not have permission for this operation. Required role: {', '.join(allowed_roles)}.",
+            )
+        return role
+    return role_checker
 
 
 # ----------------- Pydantic Schemas -----------------
@@ -144,6 +174,7 @@ def _get_full_state() -> Dict[str, Any]:
         "app_name": config.APP_NAME,
         "languages": LANGUAGES,
         "translations": TRANSLATIONS,
+        "roles": ROLES_METADATA,
         "indexed_chunks": count_indexed_documents(),
         "inventory": _enrich_inventory(tools.get_inventory()),
         "low_stock_alerts": tools.get_low_stock_alerts(),
@@ -165,8 +196,8 @@ def get_bootstrap():
 
 
 @app.post("/api/system/reseed")
-def reseed_database():
-    """Reset and seed demonstration SQLite data."""
+def reseed_database(user_role: str = Depends(require_role(["OWNER"]))):
+    """Reset and seed demonstration SQLite data (Restricted to OWNER)."""
     seed_sample_data()
     return {
         "status": "success",
@@ -175,7 +206,7 @@ def reseed_database():
 
 
 @app.post("/api/rag/load-samples")
-def load_sample_documents():
+def load_sample_documents(user_role: str = Depends(require_role(["OWNER", "HEAD_CHEF"]))):
     """Index built-in sample documents from knowledge_base/."""
     kb_dir = Path("knowledge_base")
     total_loaded = 0
@@ -195,7 +226,10 @@ def load_sample_documents():
 
 
 @app.post("/api/rag/upload")
-async def upload_and_index_documents(files: List[UploadFile] = File(...)):
+async def upload_and_index_documents(
+    files: List[UploadFile] = File(...),
+    user_role: str = Depends(require_role(["OWNER", "HEAD_CHEF"]))
+):
     """Extract text, chunk, and index uploaded PDF, DOCX, and TXT files into ChromaDB."""
     total_chunks = 0
     processed_files = []
@@ -292,7 +326,10 @@ def list_low_stock_alerts():
 
 
 @app.post("/api/inventory")
-def add_or_update_inventory(item: InventoryItemModel):
+def add_or_update_inventory(
+    item: InventoryItemModel,
+    user_role: str = Depends(require_role(["OWNER", "HEAD_CHEF"]))
+):
     if not item.item_name.strip():
         raise HTTPException(status_code=400, detail="Item name is required.")
     res = tools.upsert_inventory_item(
@@ -312,7 +349,10 @@ def add_or_update_inventory(item: InventoryItemModel):
 
 
 @app.put("/api/inventory/sync")
-def sync_inventory(payload: InventorySyncRequest):
+def sync_inventory(
+    payload: InventorySyncRequest,
+    user_role: str = Depends(require_role(["OWNER", "HEAD_CHEF"]))
+):
     rows = [
         {
             "item_name": i.item_name.strip(),
@@ -336,7 +376,10 @@ def sync_inventory(payload: InventorySyncRequest):
 
 
 @app.delete("/api/inventory/{identifier}")
-def remove_inventory_item(identifier: str):
+def remove_inventory_item(
+    identifier: str,
+    user_role: str = Depends(require_role(["OWNER", "HEAD_CHEF"]))
+):
     res = tools.delete_inventory_item(identifier)
     return {
         "result": res,
@@ -360,7 +403,10 @@ def check_recipe_feasibility(dish_name: str):
 
 
 @app.post("/api/kitchen/sales")
-def record_kitchen_dish_sales(payload: DishSalesRequest):
+def record_kitchen_dish_sales(
+    payload: DishSalesRequest,
+    user_role: str = Depends(require_role(["OWNER", "HEAD_CHEF", "LINE_COOK"]))
+):
     """Deduct ingredient quantities from inventory for cooked/sold dishes."""
     if not payload.dish_name.strip():
         raise HTTPException(status_code=400, detail="Dish name is required.")
@@ -382,7 +428,10 @@ def list_suppliers():
 
 
 @app.post("/api/suppliers")
-def add_or_update_supplier(supplier: SupplierModel):
+def add_or_update_supplier(
+    supplier: SupplierModel,
+    user_role: str = Depends(require_role(["OWNER", "HEAD_CHEF"]))
+):
     if not supplier.name.strip():
         raise HTTPException(status_code=400, detail="Supplier name is required.")
     tools.upsert_supplier(
@@ -399,7 +448,10 @@ def add_or_update_supplier(supplier: SupplierModel):
 
 
 @app.put("/api/suppliers/sync")
-def sync_suppliers(payload: SupplierSyncRequest):
+def sync_suppliers(
+    payload: SupplierSyncRequest,
+    user_role: str = Depends(require_role(["OWNER", "HEAD_CHEF"]))
+):
     rows = [
         {
             "name": s.name.strip(),
@@ -423,7 +475,10 @@ def sync_suppliers(payload: SupplierSyncRequest):
 
 
 @app.delete("/api/suppliers/{supplier_id}")
-def remove_supplier(supplier_id: int):
+def remove_supplier(
+    supplier_id: int,
+    user_role: str = Depends(require_role(["OWNER", "HEAD_CHEF"]))
+):
     tools.delete_supplier(supplier_id)
     return {
         "status": "success",
@@ -439,7 +494,10 @@ def list_orders():
 
 
 @app.post("/api/orders")
-def add_or_update_order(order: OrderModel):
+def add_or_update_order(
+    order: OrderModel,
+    user_role: str = Depends(require_role(["OWNER", "HEAD_CHEF"]))
+):
     if not order.order_number.strip() or not order.item_name.strip():
         raise HTTPException(status_code=400, detail="Order number and item name are required.")
     tools.upsert_order(
@@ -457,7 +515,10 @@ def add_or_update_order(order: OrderModel):
 
 
 @app.put("/api/orders/sync")
-def sync_orders(payload: OrderSyncRequest):
+def sync_orders(
+    payload: OrderSyncRequest,
+    user_role: str = Depends(require_role(["OWNER", "HEAD_CHEF"]))
+):
     rows = [
         {
             "order_number": o.order_number.strip().upper(),
@@ -482,7 +543,10 @@ def sync_orders(payload: OrderSyncRequest):
 
 
 @app.delete("/api/orders/{order_id}")
-def remove_order(order_id: int):
+def remove_order(
+    order_id: int,
+    user_role: str = Depends(require_role(["OWNER", "HEAD_CHEF"]))
+):
     tools.delete_order(order_id)
     return {
         "status": "success",
@@ -501,7 +565,10 @@ def list_approvals():
 
 
 @app.post("/api/approvals")
-def draft_purchase_request(payload: PurchaseRequestCreate):
+def draft_purchase_request(
+    payload: PurchaseRequestCreate,
+    user_role: str = Depends(require_role(["OWNER", "HEAD_CHEF", "LINE_COOK"]))
+):
     if not payload.item_name.strip() or not payload.supplier_name.strip():
         raise HTTPException(status_code=400, detail="Item name and supplier name are required.")
     created = tools.create_purchase_request(
@@ -519,7 +586,12 @@ def draft_purchase_request(payload: PurchaseRequestCreate):
 
 
 @app.post("/api/approvals/{request_id}/resolve")
-def resolve_approval(request_id: int, payload: PurchaseRequestResolve):
+def resolve_approval(
+    request_id: int,
+    payload: PurchaseRequestResolve,
+    user_role: str = Depends(require_role(["OWNER"]))
+):
+    """Approve or reject a pending purchase request (Restricted to OWNER)."""
     decision = payload.decision.upper().strip()
     if decision not in ("APPROVED", "REJECTED"):
         raise HTTPException(status_code=400, detail="Decision must be APPROVED or REJECTED.")

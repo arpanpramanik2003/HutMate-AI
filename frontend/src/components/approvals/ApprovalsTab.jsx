@@ -13,6 +13,7 @@ export default function ApprovalsTab({
   onManualDraftSubmit,
   lang,
   t,
+  userRole = 'OWNER',
 }) {
   return (
     <section className="panel-card">
@@ -51,6 +52,7 @@ export default function ApprovalsTab({
           onManualDraftSubmit={onManualDraftSubmit}
           lang={lang}
           t={t}
+          userRole={userRole}
         />
       )}
 
