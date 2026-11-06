@@ -59,6 +59,9 @@ class InventoryItemModel(BaseModel):
     quantity: float
     unit: str
     category: Optional[str] = "Pantry"
+    min_par_level: Optional[float] = 5.0
+    cost_per_unit: Optional[float] = 0.0
+    expiry_date: Optional[str] = ""
 
 
 class InventorySyncRequest(BaseModel):
@@ -101,6 +104,11 @@ class PurchaseRequestResolve(BaseModel):
     decision: str  # "APPROVED" or "REJECTED"
 
 
+class DishSalesRequest(BaseModel):
+    dish_name: str
+    portions: float
+
+
 # ----------------- Helper Enrichers -----------------
 
 def _enrich_inventory(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -120,10 +128,13 @@ def _enrich_pending_requests(requests: List[Dict[str, Any]]) -> List[Dict[str, A
     enriched = []
     for req in requests:
         norm = normalize_item_name(req["item_name"])
+        cost = req.get("estimated_cost", 0.0) or 0.0
+        cost_formatted = f"₹{cost:,.2f}" if cost > 0 else "Quote pending"
         enriched.append({
             **req,
             "display_bn": norm.get("display_bn", req["item_name"]),
             "display_hi": norm.get("display_hi", req["item_name"]),
+            "estimated_cost_formatted": cost_formatted,
         })
     return enriched
 
@@ -135,6 +146,9 @@ def _get_full_state() -> Dict[str, Any]:
         "translations": TRANSLATIONS,
         "indexed_chunks": count_indexed_documents(),
         "inventory": _enrich_inventory(tools.get_inventory()),
+        "low_stock_alerts": tools.get_low_stock_alerts(),
+        "recipes": tools.get_recipes(),
+        "kitchen_sales": tools.get_kitchen_sales_log(),
         "suppliers": tools.get_supplier_details(),
         "orders": tools.get_orders(),
         "pending_requests": _enrich_pending_requests(tools.get_pending_purchase_requests()),
@@ -146,7 +160,7 @@ def _get_full_state() -> Dict[str, Any]:
 
 @app.get("/api/bootstrap")
 def get_bootstrap():
-    """Return initial application state, translations, and live database tables."""
+    """Return initial application state, translations, low-stock alerts, recipes, and live tables."""
     return _get_full_state()
 
 
@@ -219,7 +233,7 @@ def chat_with_agent(payload: ChatRequest):
 
     current_lang = payload.language if payload.language in LANGUAGES else "en"
 
-    # Dynamic Language Detection directly from the user's message (matching Streamlit app.py)
+    # Dynamic Language Detection directly from the user's message
     lang_info = detect_message_language(prompt, default_lang=current_lang)
     detected_lang = lang_info["language"]
     is_explicit_switch = lang_info["is_explicit_switch"]
@@ -272,19 +286,28 @@ def list_inventory():
     return _enrich_inventory(tools.get_inventory())
 
 
+@app.get("/api/inventory/low-stock")
+def list_low_stock_alerts():
+    return tools.get_low_stock_alerts()
+
+
 @app.post("/api/inventory")
 def add_or_update_inventory(item: InventoryItemModel):
     if not item.item_name.strip():
         raise HTTPException(status_code=400, detail="Item name is required.")
     res = tools.upsert_inventory_item(
-        item.item_name,
-        item.quantity,
-        item.unit,
-        item.category,
+        item_name=item.item_name,
+        quantity=item.quantity,
+        unit=item.unit,
+        category=item.category,
+        min_par_level=item.min_par_level,
+        cost_per_unit=item.cost_per_unit,
+        expiry_date=item.expiry_date,
     )
     return {
         "result": res,
         "inventory": _enrich_inventory(tools.get_inventory()),
+        "low_stock_alerts": tools.get_low_stock_alerts(),
     }
 
 
@@ -296,15 +319,19 @@ def sync_inventory(payload: InventorySyncRequest):
             "quantity": float(i.quantity),
             "unit": i.unit.strip(),
             "category": (i.category or "Pantry").strip(),
+            "min_par_level": float(i.min_par_level or 5.0),
+            "cost_per_unit": float(i.cost_per_unit or 0.0),
+            "expiry_date": (i.expiry_date or "").strip(),
         }
         for i in payload.items
         if i.item_name.strip()
     ]
-    df = pd.DataFrame(rows, columns=["item_name", "quantity", "unit", "category"])
+    df = pd.DataFrame(rows, columns=["item_name", "quantity", "unit", "category", "min_par_level", "cost_per_unit", "expiry_date"])
     tools.sync_inventory_from_dataframe(df)
     return {
         "status": "success",
         "inventory": _enrich_inventory(tools.get_inventory()),
+        "low_stock_alerts": tools.get_low_stock_alerts(),
     }
 
 
@@ -314,6 +341,36 @@ def remove_inventory_item(identifier: str):
     return {
         "result": res,
         "inventory": _enrich_inventory(tools.get_inventory()),
+        "low_stock_alerts": tools.get_low_stock_alerts(),
+    }
+
+
+# ----------------- Kitchen Recipes & Sales Endpoints (BOM) -----------------
+
+@app.get("/api/recipes")
+def list_recipes(dish_name: Optional[str] = None):
+    """Retrieve recipes with Bill of Materials ingredient breakdown."""
+    return tools.get_recipes(dish_name)
+
+
+@app.get("/api/recipes/{dish_name}/feasibility")
+def check_recipe_feasibility(dish_name: str):
+    """Calculate portions possible based on current stock levels."""
+    return tools.check_dish_feasibility(dish_name)
+
+
+@app.post("/api/kitchen/sales")
+def record_kitchen_dish_sales(payload: DishSalesRequest):
+    """Deduct ingredient quantities from inventory for cooked/sold dishes."""
+    if not payload.dish_name.strip():
+        raise HTTPException(status_code=400, detail="Dish name is required.")
+    if payload.portions <= 0:
+        raise HTTPException(status_code=400, detail="Portions must be greater than zero.")
+
+    res = tools.record_dish_sales(payload.dish_name.strip(), float(payload.portions))
+    return {
+        "result": res,
+        "state": _get_full_state(),
     }
 
 
@@ -489,4 +546,3 @@ if FRONTEND_DIST.exists() and (FRONTEND_DIST / "index.html").exists():
         if full_path and candidate.exists() and candidate.is_file():
             return FileResponse(candidate)
         return FileResponse(FRONTEND_DIST / "index.html")
-

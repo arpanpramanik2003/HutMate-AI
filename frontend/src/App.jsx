@@ -17,6 +17,9 @@ export default function App() {
   // Live state from backend
   const [indexedChunks, setIndexedChunks] = useState(0)
   const [inventory, setInventory] = useState([])
+  const [lowStockAlerts, setLowStockAlerts] = useState([])
+  const [recipes, setRecipes] = useState([])
+  const [kitchenSales, setKitchenSales] = useState([])
   const [suppliers, setSuppliers] = useState([])
   const [orders, setOrders] = useState([])
   const [pendingRequests, setPendingRequests] = useState([])
@@ -61,6 +64,9 @@ export default function App() {
     quantity: 10.0,
     unit: 'kg',
     category: 'Produce',
+    min_par_level: 5.0,
+    cost_per_unit: 0.0,
+    expiry_date: '',
   })
   const [newSup, setNewSup] = useState({
     name: '',
@@ -90,6 +96,9 @@ export default function App() {
     if (state.translations) setTranslations(state.translations)
     if (typeof state.indexed_chunks === 'number') setIndexedChunks(state.indexed_chunks)
     if (Array.isArray(state.inventory)) setInventory(state.inventory)
+    if (Array.isArray(state.low_stock_alerts)) setLowStockAlerts(state.low_stock_alerts)
+    if (Array.isArray(state.recipes)) setRecipes(state.recipes)
+    if (Array.isArray(state.kitchen_sales)) setKitchenSales(state.kitchen_sales)
     if (Array.isArray(state.suppliers)) setSuppliers(state.suppliers)
     if (Array.isArray(state.orders)) setOrders(state.orders)
     if (Array.isArray(state.pending_requests)) setPendingRequests(state.pending_requests)
@@ -255,6 +264,31 @@ export default function App() {
     setMessages([{ role: 'assistant', content: t('welcome_message', lang) }])
   }
 
+  // Kitchen Production / Dish Sales Handler
+  const handleRecordDishSales = async (dishName, portions) => {
+    try {
+      const res = await fetch('/api/kitchen/sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dish_name: dishName, portions: parseFloat(portions) }),
+      })
+      const data = await res.json()
+      if (data.state) applyBackendState(data.state)
+      if (data.result?.status === 'success') {
+        showToast(`✅ Deducted ingredients for ${portions}x ${dishName}!`, 'success')
+        if (data.result?.low_stock_warnings?.length > 0) {
+          setTimeout(() => {
+            showToast(`⚠️ Low stock alert: ${data.result.low_stock_warnings[0]}`, 'warning')
+          }, 2000)
+        }
+      } else {
+        showToast(`⚠️ ${data.result?.message || 'Stock deduction failed'}`, 'error')
+      }
+    } catch (err) {
+      showToast(`Kitchen deduction error: ${err.message}`, 'error')
+    }
+  }
+
   // Inventory Handlers
   const handleInventoryCellChange = (index, field, value) => {
     setInventory((prev) =>
@@ -272,6 +306,9 @@ export default function App() {
         quantity: 1.0,
         unit: 'kg',
         category: 'Produce',
+        min_par_level: 5.0,
+        cost_per_unit: 0.0,
+        expiry_date: '',
       },
     ])
   }
@@ -289,6 +326,9 @@ export default function App() {
           quantity: parseFloat(r.quantity) || 0,
           unit: r.unit || 'kg',
           category: r.category || 'Pantry',
+          min_par_level: parseFloat(r.min_par_level) || 5.0,
+          cost_per_unit: parseFloat(r.cost_per_unit) || 0.0,
+          expiry_date: r.expiry_date || '',
         }))
       const res = await fetch('/api/inventory/sync', {
         method: 'PUT',
@@ -297,6 +337,7 @@ export default function App() {
       })
       const data = await res.json()
       if (data.inventory) setInventory(data.inventory)
+      if (data.low_stock_alerts) setLowStockAlerts(data.low_stock_alerts)
       showToast(
         lang === 'en'
           ? '✅ Inventory updated successfully in SQLite database!'
@@ -320,11 +361,23 @@ export default function App() {
           quantity: parseFloat(newInv.quantity) || 0,
           unit: newInv.unit,
           category: newInv.category,
+          min_par_level: parseFloat(newInv.min_par_level) || 5.0,
+          cost_per_unit: parseFloat(newInv.cost_per_unit) || 0.0,
+          expiry_date: newInv.expiry_date || '',
         }),
       })
       const data = await res.json()
       if (data.inventory) setInventory(data.inventory)
-      setNewInv({ ...newInv, item_name: '' })
+      if (data.low_stock_alerts) setLowStockAlerts(data.low_stock_alerts)
+      setNewInv({
+        item_name: '',
+        quantity: 10.0,
+        unit: 'kg',
+        category: 'Produce',
+        min_par_level: 5.0,
+        cost_per_unit: 0.0,
+        expiry_date: '',
+      })
       showToast(
         `Added: ${data.result?.item_name || newInv.item_name} (${data.result?.display_bn || ''})!`,
         'success'
@@ -571,6 +624,7 @@ export default function App() {
         isUploadingDocs={isUploadingDocs}
         onIndexUploadedDocs={handleIndexUploadedDocs}
         indexedChunks={indexedChunks}
+        lowStockAlerts={lowStockAlerts}
         t={t}
       />
 
@@ -598,6 +652,11 @@ export default function App() {
           >
             {t('tab_data')}
             <span className="tab-badge">{inventory.length}</span>
+            {lowStockAlerts.length > 0 && (
+              <span className="tab-badge urgent" title="Items below par level">
+                ⚠️ {lowStockAlerts.length}
+              </span>
+            )}
           </button>
           <button
             role="tab"
@@ -627,7 +686,7 @@ export default function App() {
           />
         )}
 
-        {/* Tab 2: Live Restaurant Data */}
+        {/* Tab 2: Live Restaurant Data (Inventory, Recipes/BOM, Suppliers, Orders) */}
         {activeTab === 'data' && (
           <DataTab
             dataSubTab={dataSubTab}
@@ -640,6 +699,9 @@ export default function App() {
             newInv={newInv}
             onNewInvChange={setNewInv}
             onQuickAddInventory={handleQuickAddInventory}
+            recipes={recipes}
+            kitchenSales={kitchenSales}
+            onRecordDishSales={handleRecordDishSales}
             suppliers={suppliers}
             onSupplierCellChange={handleSupplierCellChange}
             onAddSupplierRow={handleAddSupplierRow}

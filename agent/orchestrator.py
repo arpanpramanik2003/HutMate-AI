@@ -26,6 +26,17 @@ ALLOWED_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "get_low_stock_alerts",
+            "description": "Check which inventory items are below their minimum par level thresholds and need restocking.",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_order_status",
             "description": "Lookup live status, quantity, and supplier for a restaurant purchase order.",
             "parameters": {
@@ -66,7 +77,7 @@ ALLOWED_TOOLS = [
                 "properties": {
                     "item_name": {
                         "type": "string",
-                        "description": "Name of the ingredient or item (e.g. 'Cheese', 'Olive Oil', 'Tomatoes'). If user said 'add this', use the item from conversation context."
+                        "description": "Name of the ingredient or item (e.g. 'Cheese', 'Olive Oil', 'Tomatoes')."
                     },
                     "quantity": {
                         "type": "number",
@@ -74,11 +85,11 @@ ALLOWED_TOOLS = [
                     },
                     "unit": {
                         "type": "string",
-                        "description": "Unit of measurement (e.g. 'packets', 'kg', 'liters', 'units', 'grams', 'cans', 'boxes'). Defaults to the unit mentioned or 'units'."
+                        "description": "Unit of measurement (e.g. 'packets', 'kg', 'liters', 'units', 'grams')."
                     },
                     "category": {
                         "type": "string",
-                        "description": "Food or pantry category. Choose from: 'Dairy', 'Produce', 'Poultry', 'Meat', 'Grains', 'Spices', 'Pantry', 'Beverages'. If user did not specify, intelligently infer the appropriate category (e.g. Cheese -> 'Dairy', Tomatoes -> 'Produce', Rice -> 'Grains', Oil -> 'Pantry')."
+                        "description": "Food category: 'Dairy', 'Produce', 'Poultry', 'Meat', 'Grains', 'Spices', 'Pantry', 'Beverages'."
                     }
                 },
                 "required": ["item_name", "quantity", "unit", "category"]
@@ -122,6 +133,60 @@ ALLOWED_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "get_recipes",
+            "description": "Lookup recipe details, preparation methods, and ingredient Bill of Materials (BOM) for menu dishes.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dish_name": {
+                        "type": "string",
+                        "description": "Dish name (e.g. 'Biryani', 'Paneer Butter Masala', 'Naan'). Leave empty to list all."
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_dish_feasibility",
+            "description": "Calculate how many portions of a dish can be prepared based on current inventory stock, and identify the limiting bottleneck ingredient.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dish_name": {
+                        "type": "string",
+                        "description": "Dish name to check (e.g. 'Dum Chicken Biryani', 'Paneer Butter Masala')."
+                    }
+                },
+                "required": ["dish_name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "record_dish_sales",
+            "description": "Deduct raw ingredients from live inventory when dishes are prepared or sold in the restaurant kitchen.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dish_name": {
+                        "type": "string",
+                        "description": "Name of the dish prepared or sold (e.g. 'Dum Chicken Biryani', 'Paneer Butter Masala')."
+                    },
+                    "portions": {
+                        "type": "number",
+                        "description": "Number of portions or plates prepared/sold."
+                    }
+                },
+                "required": ["dish_name", "portions"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "search_knowledge_base",
             "description": "Search restaurant policy documents, SOPs, menus, and food safety standards.",
             "parameters": {
@@ -145,48 +210,42 @@ def get_system_prompt(language: str = "en", is_explicit_switch: bool = False) ->
 7. CONVERSATIONAL LANGUAGE REQUIREMENT: BENGALI (বাংলা)
    - The user is communicating in Bengali (বাংলা) or has explicitly requested to converse in Bengali.
    - You MUST formulate your answers, operational confirmations, and explanations in fluent, natural Bengali (বাংলা).
-   - If the user explicitly instructed to speak in Bengali (e.g. 'speak in Bengali', 'বাংলায় বলো'), warmly acknowledge the switch in Bengali (e.g., 'অবশ্যই! এখন থেকে আমি আপনার সাথে বাংলায় কথা বলছি।').
-   - When mentioning ingredients, state both or the Bengali term (e.g., Potatoes -> 'আলু (Potatoes)', Cheese -> 'পনির / চিজ (Cheese)', Chicken Breast -> 'মুরগির মাংস (Chicken)').
-   - For spelling mistakes (e.g. 'potto', 'alu', 'chiken', 'tamatar'), smartly recognize the intent, execute the tool, and answer in Bengali.
-   - Tool arguments (like item_name) should be in canonical English (e.g. item_name='Potatoes', item_name='Cheese').
+   - If the user explicitly instructed to speak in Bengali, warmly acknowledge the switch in Bengali (e.g., 'অবশ্যই! এখন থেকে আমি আপনার সাথে বাংলায় কথা বলছি।').
+   - When mentioning ingredients or dishes, state both or the Bengali term (e.g., Potatoes -> 'আলু (Potatoes)', Cheese -> 'পনির / চিজ (Cheese)', Chicken Breast -> 'মুরগির মাংস (Chicken)').
+   - When reporting sales deductions or low stock alerts, explain clearly in Bengali (e.g., '১০ প্লেট বিরিয়ানির জন্য উপাদান বাদ দেওয়া হয়েছে।').
+   - Tool arguments (like item_name, dish_name) should be in canonical English.
 """
     elif language == "hi":
         lang_instruction = """
 7. CONVERSATIONAL LANGUAGE REQUIREMENT: HINDI (हिंदी)
    - The user is communicating in Hindi (हिंदी) or has explicitly requested to converse in Hindi.
    - You MUST formulate your answers, operational confirmations, and explanations in fluent, polite Hindi (हिंदी).
-   - If the user explicitly instructed to speak in Hindi, warmly acknowledge the switch in Hindi (e.g., 'ज़रूर! अब से मैं आपसे हिंदी में बातचीत करूँगा।').
    - When mentioning ingredients, provide Hindi terms (e.g., Potatoes -> 'आलू (Potatoes)', Cheese -> 'पनीर (Cheese)').
-   - Tool arguments (like item_name) should be in canonical English.
+   - Tool arguments should be in canonical English.
 """
     else:
         lang_instruction = """
 7. CONVERSATIONAL LANGUAGE REQUIREMENT: ENGLISH
-   - The user is communicating in English or has requested to converse in English.
    - Formulate your answers in clear, professional English.
-   - If the user asked to switch language (e.g. 'talk in English' or 'switch to English'), warmly acknowledge the change in English.
-   - If users ask for Bengali/Hindi meanings (e.g. 'what is potato in bengali?'), provide them accurately (e.g. 'আলু').
 """
 
     return f"""You are HutMate AI, an intelligent restaurant operations copilot.
-Your job is to assist restaurant owners, managers, and kitchen staff with accurate, operational information and proactive tasks.
+Your job is to assist restaurant owners, managers, and kitchen staff with accurate operational information, stock monitoring, recipe calculation, and inventory updates.
 
 Guidelines:
-1. Document Knowledge: For recipes, menus, food hygiene, or staff SOPs, use `search_knowledge_base`.
-2. Live Data Lookups: For current inventory quantities, order statuses, or supplier contacts, use `get_inventory`, `get_order_status`, `get_supplier_details`.
-3. Inventory Modifications: When the user asks to add an item to the inventory (e.g. "add 5 packets of cheese", "add this in the inventory for 5 packets and add sufficient category", "5 packet alu add koro", "পনির যোগ করুন"):
-   - Smart Typo & Multilingual Resolution: Understand typos and foreign/phonetic words (e.g., 'potto', 'patato', 'alu', 'aaloo' -> 'Potatoes'; 'cheez', 'paneer' -> 'Cheese'; 'chikn', 'murgi' -> 'Chicken Breast').
-   - Context Resolution: If the user refers to an item discussed in previous messages (e.g., "do you have cheese?" followed by "then add this in the inventory for 5 packets"), recognize that "this" refers to "Cheese".
-   - Category Inference: If not specified by user, automatically infer the correct category:
-     * Cheese, Milk, Yogurt, Butter -> 'Dairy'
-     * Potatoes, Onions, Tomatoes, Herbs -> 'Produce'
-     * Chicken, Turkey -> 'Poultry'
-     * Rice, Wheat, Flour -> 'Grains'
-     * Oil, Ghee, Vinegar, Cans -> 'Pantry'
-   - Always invoke `add_inventory_item`. NEVER say "I don't have a way to edit live inventory directly".
-4. Action Proposals: When asked to prepare, draft, or order items through suppliers, use `create_purchase_request`. Make sure to confirm that the request is drafted and pending manager approval.
-5. Transparency: Whenever answering from documents, cite the source document name and page. If evidence is not found, state it clearly.
-6. Safety: Never guess live inventory counts or order statuses; always consult the tools.
+1. Document Knowledge: For hygiene standards, policies, or staff SOPs, use `search_knowledge_base`.
+2. Live Data Lookups: For stock levels, use `get_inventory`. For purchase orders, use `get_order_status`. For suppliers, use `get_supplier_details`.
+3. Low Stock & Par Level Monitoring: When asked about items running low, shortages, or alerts, use `get_low_stock_alerts`.
+4. Kitchen Recipes & BOM (Bill of Materials):
+   - To view recipes and ingredients required per portion, use `get_recipes`.
+   - When asked how many portions/plates of a dish can be cooked with current stock, use `check_dish_feasibility`. Report the bottleneck ingredient clearly.
+   - When staff reports dishes cooked, prepared, or sold (e.g. "We sold 10 plates of Biryani", "15 ta biryani serve kora hoyeche"), use `record_dish_sales` to deduct inventory. If stock is insufficient, notify the user immediately.
+5. Inventory Modifications:
+   - For direct additions (e.g. "add 5 packets of cheese"), infer categories automatically and invoke `add_inventory_item`.
+   - When asked to draft/prepare an order with a supplier, use `create_purchase_request` (which calculates estimated costs).
+6. Transparency & Safety:
+   - Always quote real numbers from tools. Never hallucinate stock or order statuses.
+   - Whenever answering from documents, cite the source document name and page.
 {lang_instruction}
 """
 
@@ -194,6 +253,17 @@ def execute_tool(name: str, args: Dict[str, Any]) -> Any:
     """Safely execute a registered tool function."""
     if name == "get_inventory":
         return tools.get_inventory(args.get("item_name"))
+    elif name == "get_low_stock_alerts":
+        return tools.get_low_stock_alerts()
+    elif name == "get_recipes":
+        return tools.get_recipes(args.get("dish_name"))
+    elif name == "check_dish_feasibility":
+        return tools.check_dish_feasibility(args.get("dish_name", ""))
+    elif name == "record_dish_sales":
+        return tools.record_dish_sales(
+            dish_name=args.get("dish_name", ""),
+            portions=float(args.get("portions", 1.0))
+        )
     elif name == "add_inventory_item":
         return tools.upsert_inventory_item(
             item_name=args.get("item_name", "").strip(),
@@ -220,24 +290,15 @@ def execute_tool(name: str, args: Dict[str, Any]) -> Any:
         return {"error": f"Unknown tool: {name}"}
 
 def run_agent(user_message: str, conversation_history: List[Dict[str, str]], language: str = "en") -> Dict[str, Any]:
-    """
-    Execute the agent tool-calling loop:
-    1. Detect conversational language or in-chat language change intent dynamically.
-    2. Format prompt with dynamic multilingual system prompt matching user language.
-    3. If Groq requests tools, execute them safely in Python.
-    4. Return final answer, tool activity, citations, and detected language metadata.
-    """
-    # Dynamic Language Detection from user prompt & context
+    """Execute the agent tool-calling loop with dynamic language handling."""
     lang_info = detect_message_language(user_message, default_lang=language)
     effective_lang = lang_info["language"]
     is_explicit_switch = lang_info["is_explicit_switch"]
 
     client = groq_client.get_groq_client()
     
-    # Format messages with dynamic multilingual system prompt
     system_prompt = get_system_prompt(effective_lang, is_explicit_switch=is_explicit_switch)
     messages = [{"role": "system", "content": system_prompt}]
-    # Append recent conversation history (max 8 messages)
     for m in conversation_history[-8:]:
         messages.append({"role": m["role"], "content": m["content"]})
     messages.append({"role": "user", "content": user_message})
@@ -245,7 +306,6 @@ def run_agent(user_message: str, conversation_history: List[Dict[str, str]], lan
     tool_activities = []
     sources = []
 
-    # Bounded iteration loop (max 4 turns)
     for _ in range(4):
         response = client.chat.completions.create(
             model=config.GROQ_MODEL,
@@ -257,7 +317,6 @@ def run_agent(user_message: str, conversation_history: List[Dict[str, str]], lan
 
         response_message = response.choices[0].message
 
-        # If no tool called, return the final response
         if not response_message.tool_calls:
             return {
                 "answer": response_message.content or "No response generated.",
@@ -268,7 +327,6 @@ def run_agent(user_message: str, conversation_history: List[Dict[str, str]], lan
                 "detected_script": lang_info.get("detected_script")
             }
 
-        # Otherwise, process tool calls
         messages.append(response_message)
         for tool_call in response_message.tool_calls:
             fn_name = tool_call.function.name
@@ -280,7 +338,6 @@ def run_agent(user_message: str, conversation_history: List[Dict[str, str]], lan
             tool_result = execute_tool(fn_name, fn_args)
             tool_activities.append({"tool": fn_name, "args": fn_args, "result": tool_result})
 
-            # If search_knowledge_base was invoked, extract sources
             if fn_name == "search_knowledge_base" and isinstance(tool_result, list):
                 for item in tool_result:
                     if isinstance(item, dict) and "source" in item:
@@ -300,4 +357,3 @@ def run_agent(user_message: str, conversation_history: List[Dict[str, str]], lan
         "is_explicit_switch": is_explicit_switch,
         "detected_script": lang_info.get("detected_script")
     }
-

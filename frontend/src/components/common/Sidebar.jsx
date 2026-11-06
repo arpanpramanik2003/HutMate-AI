@@ -14,6 +14,7 @@ export default function Sidebar({
   isUploadingDocs,
   onIndexUploadedDocs,
   indexedChunks,
+  lowStockAlerts,
   t,
 }) {
   return (
@@ -42,6 +43,29 @@ export default function Sidebar({
           <option value="hi">🇮🇳 हिंदी (Hindi)</option>
         </select>
       </div>
+
+      {/* Low Stock Alerts Banner */}
+      {lowStockAlerts && lowStockAlerts.length > 0 && (
+        <div
+          className="metric-card"
+          style={{
+            borderColor: '#ef4444',
+            backgroundColor: 'rgba(239, 68, 68, 0.08)',
+            margin: '0 16px 14px 16px',
+          }}
+        >
+          <span className="metric-label" style={{ color: '#b91c1c', fontWeight: 700 }}>
+            ⚠️ Par Level Warnings
+          </span>
+          <span className="metric-value" style={{ color: '#b91c1c' }}>
+            {lowStockAlerts.length} items low
+          </span>
+          <div style={{ fontSize: '0.72rem', color: '#7f1d1d', marginTop: '4px' }}>
+            {lowStockAlerts.map((a) => a.item_name).slice(0, 3).join(', ')}
+            {lowStockAlerts.length > 3 ? '...' : ''}
+          </div>
+        </div>
+      )}
 
       {/* System Operations */}
       <div className="sidebar-section">
@@ -128,4 +152,3 @@ export default function Sidebar({
     </aside>
   )
 }
-

@@ -24,6 +24,7 @@ export default function AuditHistory({ allRequests, lang }) {
             <th>Quantity / পরিমাণ</th>
             <th>Unit / একক</th>
             <th>Supplier / সরবরাহকারী</th>
+            <th>Est. Cost (₹)</th>
             <th>Status</th>
             <th>Created At</th>
             <th>Resolved At</th>
@@ -39,6 +40,9 @@ export default function AuditHistory({ allRequests, lang }) {
               <td>{Number(req.quantity).toFixed(2)}</td>
               <td>{req.unit}</td>
               <td>{req.supplier_name}</td>
+              <td style={{ color: '#047857', fontWeight: 600 }}>
+                {req.estimated_cost ? `₹${Number(req.estimated_cost).toFixed(2)}` : '—'}
+              </td>
               <td>
                 <span className={`status-badge status-${req.status}`}>
                   {req.status}

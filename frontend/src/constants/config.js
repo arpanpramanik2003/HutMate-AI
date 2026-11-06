@@ -17,10 +17,10 @@ export const FALLBACK_TRANSLATIONS = {
   app_title: {
     en: '🍽️ HutMate AI',
     bn: '🍽️ হাটমেট এআই (HutMate AI)',
-    hi: '🍽️ हटमेट एआई (HutMate AI)',
+    hi: '🍽️ हटमेट एআই (HutMate AI)',
   },
   app_caption: {
-    en: 'Intelligent Restaurant Operations Assistant — Multilingual Edition',
+    en: 'Intelligent Restaurant Operations Assistant — Production Hospitality Edition',
     bn: 'স্মার্ট রেস্তোরাঁ অপারেশন সহকারী — বহুভাষিক সংস্করণ',
     hi: 'स्मार्ट रेस्तरां संचालन सहायक — बहुभाषी संस्करण',
   },
@@ -90,9 +90,9 @@ export const FALLBACK_TRANSLATIONS = {
     hi: '🗑️ चैट साफ़ करें',
   },
   chat_placeholder: {
-    en: "Ask HutMate AI (e.g. 'How much chicken is in stock?' or 'Do we have cheese?')",
-    bn: "হাটমেট এআই-কে জিজ্ঞাসা করুন (যেমন 'স্টকে কতটা মুরগির মাংস আছে?' বা 'আমাদের কি আলু আছে?')",
-    hi: "हटमेट एआई से पूछें (जैसे 'स्टॉक में कितना चिकन है?' या 'क्या हमारे पास आलू है?')",
+    en: "Ask HutMate AI (e.g. 'How many Biryanis can we cook?' or 'Which items are low in stock?')",
+    bn: "হাটমেট এআই-কে জিজ্ঞাসা করুন (যেমন 'কয় প্লেট বিরিয়ানি বানানো যাবে?' বা 'কোন উপাদান কম আছে?')",
+    hi: "हटमेट एआई से पूछें (जैसे 'कितनी बिरयानी बनाई जा सकती है?' या 'कौन से आइटम कम हैं?')",
   },
   welcome_message: {
     en: 'Hello! I am HutMate AI, your restaurant operations assistant. How can I assist you today?',
@@ -104,6 +104,11 @@ export const FALLBACK_TRANSLATIONS = {
     bn: '📦 ইনভেন্টরি পণ্য (স্টক)',
     hi: '📦 इन्वेंटरी आइटम',
   },
+  subtab_recipes: {
+    en: '🍳 Kitchen Recipes & BOM',
+    bn: '🍳 রান্নাঘরের রেসিপি ও BOM',
+    hi: '🍳 रसोई रेसिपी व सामग्री',
+  },
   subtab_suppliers: {
     en: '🚚 Suppliers',
     bn: '🚚 সরবরাহকারী তালিকা (Suppliers)',
@@ -112,7 +117,7 @@ export const FALLBACK_TRANSLATIONS = {
   subtab_orders: {
     en: '📋 Orders',
     bn: '📋 অর্ডার সমূহ',
-    hi: '📋 ऑर्डर',
+    hi: '📋 অর্ডার',
   },
   btn_save_inv: {
     en: '💾 Save Inventory Changes',
@@ -152,11 +157,10 @@ export const FALLBACK_TRANSLATIONS = {
 }
 
 export const DEMO_PROMPTS = [
-  'What is our food storage policy?',
-  'Do you have cheese?',
-  'আমাদের কাছে কি আলু আছে?',
-  '৫ প্যাকেট চিজ যোগ করুন',
-  'What is the status of order ORD-1001?',
+  'How many portions of Dum Chicken Biryani can we cook right now?',
+  'Which items are currently below minimum par levels?',
+  'We just sold 6 plates of Dum Chicken Biryani, deduct from stock.',
+  'আমাদের কাছে কি আলু বা পনির আছে?',
+  'What is our food storage temperature policy?',
   'Prepare a purchase request for 25 kg of Basmati Rice from Golden Grain Traders.',
 ]
-

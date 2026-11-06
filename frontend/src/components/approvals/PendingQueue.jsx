@@ -42,6 +42,12 @@ export default function PendingQueue({
                       <strong>Supplier:</strong>{' '}
                       <code>{req.supplier_name}</code>
                     </span>
+                    <span>
+                      <strong>Est. Financial Commitment:</strong>{' '}
+                      <code style={{ color: '#047857', fontWeight: 700 }}>
+                        {req.estimated_cost_formatted || (req.estimated_cost ? `₹${Number(req.estimated_cost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : 'Quote pending')}
+                      </code>
+                    </span>
                   </div>
                   <div className="approval-timestamp">
                     Requested on: {req.created_at || 'Just now'}
