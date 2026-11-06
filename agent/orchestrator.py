@@ -3,9 +3,13 @@ from typing import Dict, Any, List, Optional
 from core import config, groq_client
 from core.i18n import detect_message_language, LANGUAGES
 from rag.retriever import retrieve_relevant_chunks
-from agent import tools
+from agent import tools, schemas
+from agent.guardrails import inspect_guardrails
+from agent.fallback_agent import run_fallback_agent
+from agent.memory import ConversationMemory
 
-# Allowed tool schemas for Groq / OpenAI-compatible tool calling
+memory_manager = ConversationMemory(max_history_turns=8, max_char_budget=12000)
+
 ALLOWED_TOOLS = [
     {
         "type": "function",
@@ -71,7 +75,7 @@ ALLOWED_TOOLS = [
         "type": "function",
         "function": {
             "name": "add_inventory_item",
-            "description": "Add a new item/ingredient directly into the restaurant inventory, or update existing stock levels, unit, and category.",
+            "description": "Add a new item/ingredient directly into the restaurant inventory, or update existing stock levels, unit, category, and par levels.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -90,6 +94,18 @@ ALLOWED_TOOLS = [
                     "category": {
                         "type": "string",
                         "description": "Food category: 'Dairy', 'Produce', 'Poultry', 'Meat', 'Grains', 'Spices', 'Pantry', 'Beverages'."
+                    },
+                    "min_par_level": {
+                        "type": "number",
+                        "description": "Minimum threshold before restock alert triggers."
+                    },
+                    "cost_per_unit": {
+                        "type": "number",
+                        "description": "Cost per unit in INR (₹)."
+                    },
+                    "expiry_date": {
+                        "type": "string",
+                        "description": "Expiration date in YYYY-MM-DD format."
                     }
                 },
                 "required": ["item_name", "quantity", "unit", "category"]
@@ -212,7 +228,7 @@ def get_system_prompt(language: str = "en", is_explicit_switch: bool = False) ->
    - You MUST formulate your answers, operational confirmations, and explanations in fluent, natural Bengali (বাংলা).
    - If the user explicitly instructed to speak in Bengali, warmly acknowledge the switch in Bengali (e.g., 'অবশ্যই! এখন থেকে আমি আপনার সাথে বাংলায় কথা বলছি।').
    - When mentioning ingredients or dishes, state both or the Bengali term (e.g., Potatoes -> 'আলু (Potatoes)', Cheese -> 'পনির / চিজ (Cheese)', Chicken Breast -> 'মুরগির মাংস (Chicken)').
-   - When reporting sales deductions or low stock alerts, explain clearly in Bengali (e.g., '১০ প্লেট বিরিয়ানির জন্য উপাদান বাদ দেওয়া হয়েছে।').
+   - When reporting sales deductions or low stock alerts, explain clearly in Bengali.
    - Tool arguments (like item_name, dish_name) should be in canonical English.
 """
     elif language == "hi":
@@ -229,8 +245,8 @@ def get_system_prompt(language: str = "en", is_explicit_switch: bool = False) ->
    - Formulate your answers in clear, professional English.
 """
 
-    return f"""You are HutMate AI, an intelligent restaurant operations copilot.
-Your job is to assist restaurant owners, managers, and kitchen staff with accurate operational information, stock monitoring, recipe calculation, and inventory updates.
+    return f"""You are HutMate AI, an intelligent enterprise restaurant operations copilot.
+Your job is to assist restaurant owners, head chefs, and kitchen staff with accurate operational metrics, stock monitoring, recipe feasibility, and inventory updates.
 
 Guidelines:
 1. Document Knowledge: For hygiene standards, policies, or staff SOPs, use `search_knowledge_base`.
@@ -240,9 +256,8 @@ Guidelines:
    - To view recipes and ingredients required per portion, use `get_recipes`.
    - When asked how many portions/plates of a dish can be cooked with current stock, use `check_dish_feasibility`. Report the bottleneck ingredient clearly.
    - When staff reports dishes cooked, prepared, or sold (e.g. "We sold 10 plates of Biryani", "15 ta biryani serve kora hoyeche"), use `record_dish_sales` to deduct inventory. If stock is insufficient, notify the user immediately.
-5. Inventory Modifications:
-   - For direct additions (e.g. "add 5 packets of cheese"), infer categories automatically and invoke `add_inventory_item`.
-   - When asked to draft/prepare an order with a supplier, use `create_purchase_request` (which calculates estimated costs).
+5. Proactive Kitchen Recommendations:
+   - When ingredients fall below minimum par level thresholds, alert the staff proactively and suggest creating a draft purchase order with the appropriate supplier.
 6. Transparency & Safety:
    - Always quote real numbers from tools. Never hallucinate stock or order statuses.
    - Whenever answering from documents, cite the source document name and page.
@@ -250,110 +265,149 @@ Guidelines:
 """
 
 def execute_tool(name: str, args: Dict[str, Any]) -> Any:
-    """Safely execute a registered tool function."""
-    if name == "get_inventory":
-        return tools.get_inventory(args.get("item_name"))
-    elif name == "get_low_stock_alerts":
-        return tools.get_low_stock_alerts()
-    elif name == "get_recipes":
-        return tools.get_recipes(args.get("dish_name"))
-    elif name == "check_dish_feasibility":
-        return tools.check_dish_feasibility(args.get("dish_name", ""))
-    elif name == "record_dish_sales":
-        return tools.record_dish_sales(
-            dish_name=args.get("dish_name", ""),
-            portions=float(args.get("portions", 1.0))
-        )
-    elif name == "add_inventory_item":
-        return tools.upsert_inventory_item(
-            item_name=args.get("item_name", "").strip(),
-            quantity=float(args.get("quantity", 0)),
-            unit=args.get("unit", "units").strip(),
-            category=args.get("category", "Pantry").strip()
-        )
-    elif name == "delete_inventory_item":
-        return tools.delete_inventory_item(args.get("item_name", "").strip())
-    elif name == "get_order_status":
-        return tools.get_order_status(args.get("order_number", ""))
-    elif name == "get_supplier_details":
-        return tools.get_supplier_details(args.get("supplier_name"))
-    elif name == "create_purchase_request":
-        return tools.create_purchase_request(
-            item_name=args.get("item_name", ""),
-            quantity=float(args.get("quantity", 0)),
-            unit=args.get("unit", "units"),
-            supplier_name=args.get("supplier_name", "")
-        )
-    elif name == "search_knowledge_base":
-        return retrieve_relevant_chunks(args.get("query", ""))
-    else:
-        return {"error": f"Unknown tool: {name}"}
+    """Safely validate arguments via Pydantic schemas and execute registered tools."""
+    try:
+        if name == "get_inventory":
+            v = schemas.GetInventoryArgs(**args)
+            return tools.get_inventory(v.item_name)
+        elif name == "get_low_stock_alerts":
+            return tools.get_low_stock_alerts()
+        elif name == "get_recipes":
+            v = schemas.GetRecipesArgs(**args)
+            return tools.get_recipes(v.dish_name)
+        elif name == "check_dish_feasibility":
+            v = schemas.CheckDishFeasibilityArgs(**args)
+            return tools.check_dish_feasibility(v.dish_name)
+        elif name == "record_dish_sales":
+            v = schemas.RecordDishSalesArgs(**args)
+            return tools.record_dish_sales(dish_name=v.dish_name, portions=v.portions)
+        elif name == "add_inventory_item":
+            v = schemas.AddInventoryItemArgs(**args)
+            return tools.upsert_inventory_item(
+                item_name=v.item_name,
+                quantity=v.quantity,
+                unit=v.unit,
+                category=v.category,
+                min_par_level=v.min_par_level,
+                cost_per_unit=v.cost_per_unit,
+                expiry_date=v.expiry_date,
+            )
+        elif name == "delete_inventory_item":
+            v = schemas.DeleteInventoryItemArgs(**args)
+            return tools.delete_inventory_item(v.item_name)
+        elif name == "get_order_status":
+            v = schemas.GetOrderStatusArgs(**args)
+            return tools.get_order_status(v.order_number)
+        elif name == "get_supplier_details":
+            v = schemas.GetSupplierDetailsArgs(**args)
+            return tools.get_supplier_details(v.supplier_name)
+        elif name == "create_purchase_request":
+            v = schemas.CreatePurchaseRequestArgs(**args)
+            return tools.create_purchase_request(
+                item_name=v.item_name,
+                quantity=v.quantity,
+                unit=v.unit,
+                supplier_name=v.supplier_name,
+            )
+        elif name == "search_knowledge_base":
+            v = schemas.SearchKnowledgeBaseArgs(**args)
+            return retrieve_relevant_chunks(v.query)
+        else:
+            return {"error": f"Unknown tool: '{name}'"}
+    except Exception as e:
+        return {"error": f"Tool argument validation failed for '{name}': {str(e)}"}
 
 def run_agent(user_message: str, conversation_history: List[Dict[str, str]], language: str = "en") -> Dict[str, Any]:
-    """Execute the agent tool-calling loop with dynamic language handling."""
+    """Execute the enterprise agent with guardrails, memory pruning, Groq tool-calling, and fallback."""
+    # 1. Dynamic Language Detection
     lang_info = detect_message_language(user_message, default_lang=language)
     effective_lang = lang_info["language"]
     is_explicit_switch = lang_info["is_explicit_switch"]
 
-    client = groq_client.get_groq_client()
-    
-    system_prompt = get_system_prompt(effective_lang, is_explicit_switch=is_explicit_switch)
-    messages = [{"role": "system", "content": system_prompt}]
-    for m in conversation_history[-8:]:
-        messages.append({"role": m["role"], "content": m["content"]})
-    messages.append({"role": "user", "content": user_message})
+    # 2. Enterprise Domain Guardrails Check
+    is_blocked, deflection_msg = inspect_guardrails(user_message, language=effective_lang)
+    if is_blocked:
+        return {
+            "answer": deflection_msg,
+            "tools_used": [],
+            "sources": [],
+            "detected_language": effective_lang,
+            "is_explicit_switch": is_explicit_switch,
+            "detected_script": lang_info.get("detected_script"),
+            "guardrail_deflected": True,
+        }
 
-    tool_activities = []
-    sources = []
+    # 3. Context Memory Pruning
+    pruned_history = memory_manager.prune_history(conversation_history)
 
-    for _ in range(4):
-        response = client.chat.completions.create(
-            model=config.GROQ_MODEL,
-            messages=messages,
-            tools=ALLOWED_TOOLS,
-            tool_choice="auto",
-            temperature=0.2,
-        )
+    # 4. Attempt LLM Execution via Groq
+    try:
+        client = groq_client.get_groq_client()
+        system_prompt = get_system_prompt(effective_lang, is_explicit_switch=is_explicit_switch)
+        messages = [{"role": "system", "content": system_prompt}]
+        for m in pruned_history:
+            messages.append({"role": m["role"], "content": m["content"]})
+        messages.append({"role": "user", "content": user_message})
 
-        response_message = response.choices[0].message
+        tool_activities = []
+        sources = []
 
-        if not response_message.tool_calls:
-            return {
-                "answer": response_message.content or "No response generated.",
-                "tools_used": tool_activities,
-                "sources": sources,
-                "detected_language": effective_lang,
-                "is_explicit_switch": is_explicit_switch,
-                "detected_script": lang_info.get("detected_script")
-            }
+        for _ in range(4):
+            response = client.chat.completions.create(
+                model=config.GROQ_MODEL,
+                messages=messages,
+                tools=ALLOWED_TOOLS,
+                tool_choice="auto",
+                temperature=0.2,
+            )
 
-        messages.append(response_message)
-        for tool_call in response_message.tool_calls:
-            fn_name = tool_call.function.name
-            try:
-                fn_args = json.loads(tool_call.function.arguments)
-            except Exception:
-                fn_args = {}
+            response_message = response.choices[0].message
 
-            tool_result = execute_tool(fn_name, fn_args)
-            tool_activities.append({"tool": fn_name, "args": fn_args, "result": tool_result})
+            if not response_message.tool_calls:
+                return {
+                    "answer": response_message.content or "No response generated.",
+                    "tools_used": tool_activities,
+                    "sources": sources,
+                    "detected_language": effective_lang,
+                    "is_explicit_switch": is_explicit_switch,
+                    "detected_script": lang_info.get("detected_script")
+                }
 
-            if fn_name == "search_knowledge_base" and isinstance(tool_result, list):
-                for item in tool_result:
-                    if isinstance(item, dict) and "source" in item:
-                        sources.append(f"{item['source']} (Page {item.get('page', 1)})")
+            messages.append(response_message)
+            for tool_call in response_message.tool_calls:
+                fn_name = tool_call.function.name
+                try:
+                    fn_args = json.loads(tool_call.function.arguments)
+                except Exception:
+                    fn_args = {}
 
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": json.dumps(tool_result, default=str),
-            })
+                tool_result = execute_tool(fn_name, fn_args)
+                tool_activities.append({"tool": fn_name, "args": fn_args, "result": tool_result})
 
-    return {
-        "answer": "Reached maximum tool execution turns.",
-        "tools_used": tool_activities,
-        "sources": sources,
-        "detected_language": effective_lang,
-        "is_explicit_switch": is_explicit_switch,
-        "detected_script": lang_info.get("detected_script")
-    }
+                if fn_name == "search_knowledge_base" and isinstance(tool_result, list):
+                    for item in tool_result:
+                        if isinstance(item, dict) and "source" in item:
+                            sources.append(f"{item['source']} (Page {item.get('page', 1)})")
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": json.dumps(tool_result, default=str),
+                })
+
+        return {
+            "answer": "Reached maximum tool execution turns.",
+            "tools_used": tool_activities,
+            "sources": sources,
+            "detected_language": effective_lang,
+            "is_explicit_switch": is_explicit_switch,
+            "detected_script": lang_info.get("detected_script")
+        }
+
+    except Exception as llm_err:
+        # 5. Graceful Cascade to Deterministic Fallback Agent
+        fallback_res = run_fallback_agent(user_message, language=effective_lang)
+        fallback_res["llm_error"] = str(llm_err)
+        fallback_res["is_explicit_switch"] = is_explicit_switch
+        fallback_res["detected_script"] = lang_info.get("detected_script")
+        return fallback_res
